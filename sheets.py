@@ -1,10 +1,3 @@
-"""
-sheets.py — Integrasi Google Sheets untuk bot KitFix.
-
-Setiap fungsi menerima dict data dan append ke baris pertama yang kosong
-di sheet yang sesuai dalam spreadsheet KitFix.
-"""
-
 import os
 import json
 import gspread
@@ -17,52 +10,41 @@ SCOPES = [
 
 SPREADSHEET_ID = os.environ["SPREADSHEET_ID"]
 
-# ─────────────────────────────────────────────────
-# AUTH
-# ─────────────────────────────────────────────────
-
-def get_client() -> gspread.Client:
-    """Buat gspread client dari service account JSON di env var."""
+def get_client():
     creds_json = os.environ["GOOGLE_CREDENTIALS_JSON"]
     creds_dict = json.loads(creds_json)
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     return gspread.authorize(creds)
 
-def get_sheet(sheet_name: str) -> gspread.Worksheet:
+def get_sheet(sheet_name):
     client = get_client()
     spreadsheet = client.open_by_key(SPREADSHEET_ID)
-    return spreadsheet.worksheet(sheet_name)
+    # Coba exact match dulu, lalu case-insensitive
+    try:
+        return spreadsheet.worksheet(sheet_name)
+    except gspread.WorksheetNotFound:
+        # Coba cari nama yang mirip (case-insensitive)
+        for ws in spreadsheet.worksheets():
+            if ws.title.strip().upper() == sheet_name.strip().upper():
+                return ws
+        # Kalau tidak ketemu, tampilkan daftar sheet yang ada
+        available = [ws.title for ws in spreadsheet.worksheets()]
+        raise Exception(f"Sheet '{sheet_name}' tidak ditemukan. Sheet yang ada: {available}")
 
-# ─────────────────────────────────────────────────
-# HELPERS
-# ─────────────────────────────────────────────────
-
-def find_next_empty_row(ws: gspread.Worksheet, start_row: int = 6) -> int:
-    """
-    Cari baris kosong pertama mulai dari start_row.
-    Sheet KitFix punya header di baris 1-5, data mulai baris 6.
-    """
-    col_a = ws.col_values(1)  # ambil kolom A
+def find_next_empty_row(ws, start_row=6):
+    col_a = ws.col_values(1)
     for i, val in enumerate(col_a[start_row - 1:], start=start_row):
         if not str(val).strip():
             return i
-    # Kalau semua terisi, return baris setelah data terakhir
     return len(col_a) + 1
 
-def rp(value: str) -> int:
-    """Convert string angka ke int."""
+def rp(value):
     try:
         return int(str(value).replace(",", "").replace(".", "").strip())
-    except ValueError:
+    except (ValueError, TypeError):
         return 0
 
-# ─────────────────────────────────────────────────
-# PEMASUKAN HARIAN
-# Sheet: "PEMASUKAN HARIAN"
-# Kolom: Tanggal | Nama Pelanggan | Jasa | Harga (Rp) | Metode Bayar | Status | Catatan
-# ─────────────────────────────────────────────────
-
-def append_pemasukan(data: dict):
+def append_pemasukan(data):
     ws = get_sheet("PEMASUKAN HARIAN")
     row = find_next_empty_row(ws, start_row=6)
     ws.update(
@@ -79,17 +61,10 @@ def append_pemasukan(data: dict):
         value_input_option="USER_ENTERED"
     )
 
-# ─────────────────────────────────────────────────
-# PENGELUARAN
-# Sheet: "PENGELUARAN"
-# Kolom: No. | Tanggal | Kategori Pengeluaran | Nominal (Rp) | Metode Bayar
-# ─────────────────────────────────────────────────
-
-def append_pengeluaran(data: dict):
+def append_pengeluaran(data):
     ws = get_sheet("PENGELUARAN")
     row = find_next_empty_row(ws, start_row=6)
 
-    # Hitung nomor urut
     existing = ws.col_values(1)
     last_no = 0
     for val in existing[5:]:
@@ -99,12 +74,11 @@ def append_pengeluaran(data: dict):
                 last_no = n
         except (ValueError, TypeError):
             pass
-    new_no = last_no + 1
 
     ws.update(
         f"A{row}:E{row}",
         [[
-            new_no,
+            last_no + 1,
             data.get("Tanggal", ""),
             data.get("Kategori Pengeluaran", ""),
             rp(data.get("Nominal (Rp)", 0)),
@@ -113,14 +87,7 @@ def append_pengeluaran(data: dict):
         value_input_option="USER_ENTERED"
     )
 
-# ─────────────────────────────────────────────────
-# KAME → KITFIX
-# Sheet: "KAME → KITFIX"
-# Kolom: No. | Tgl Masuk KAME | Nama Pelanggan | No. HP | Jenis Barang |
-#         Keluhan / Pekerjaan | Harga Disepakati (Rp) | Status | Catatan
-# ─────────────────────────────────────────────────
-
-def append_kame_kitfix(data: dict):
+def append_kame_kitfix(data):
     ws = get_sheet("KAME → KITFIX")
     row = find_next_empty_row(ws, start_row=6)
 
@@ -133,12 +100,11 @@ def append_kame_kitfix(data: dict):
                 last_no = n
         except (ValueError, TypeError):
             pass
-    new_no = last_no + 1
 
     ws.update(
         f"A{row}:I{row}",
         [[
-            new_no,
+            last_no + 1,
             data.get("Tgl Masuk KAME", ""),
             data.get("Nama Pelanggan", ""),
             data.get("No. HP", ""),
@@ -151,14 +117,7 @@ def append_kame_kitfix(data: dict):
         value_input_option="USER_ENTERED"
     )
 
-# ─────────────────────────────────────────────────
-# KITFIX → KAME
-# Sheet: "KITFIX → KAME"
-# Kolom: No. | Tgl Selesai di KitFix | Nama Pelanggan | Jenis Barang |
-#         Pekerjaan yang Dilakukan | Biaya KitFix (Rp) | Status Pembayaran | Catatan
-# ─────────────────────────────────────────────────
-
-def append_kitfix_kame(data: dict):
+def append_kitfix_kame(data):
     ws = get_sheet("KITFIX → KAME")
     row = find_next_empty_row(ws, start_row=6)
 
@@ -171,12 +130,11 @@ def append_kitfix_kame(data: dict):
                 last_no = n
         except (ValueError, TypeError):
             pass
-    new_no = last_no + 1
 
     ws.update(
         f"A{row}:H{row}",
         [[
-            new_no,
+            last_no + 1,
             data.get("Tgl Selesai di KitFix", ""),
             data.get("Nama Pelanggan", ""),
             data.get("Jenis Barang", ""),
