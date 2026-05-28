@@ -19,24 +19,40 @@ def get_client():
 def get_sheet(sheet_name):
     client = get_client()
     spreadsheet = client.open_by_key(SPREADSHEET_ID)
-    # Coba exact match dulu, lalu case-insensitive
     try:
         return spreadsheet.worksheet(sheet_name)
     except gspread.WorksheetNotFound:
-        # Coba cari nama yang mirip (case-insensitive)
         for ws in spreadsheet.worksheets():
             if ws.title.strip().upper() == sheet_name.strip().upper():
                 return ws
-        # Kalau tidak ketemu, tampilkan daftar sheet yang ada
         available = [ws.title for ws in spreadsheet.worksheets()]
-        raise Exception(f"Sheet '{sheet_name}' tidak ditemukan. Sheet yang ada: {available}")
+        raise Exception(f"Sheet '{sheet_name}' tidak ditemukan. Ada: {available}")
 
-def find_next_empty_row(ws, start_row=6):
-    col_a = ws.col_values(1)
-    for i, val in enumerate(col_a[start_row - 1:], start=start_row):
+def find_next_empty_row(ws):
+    """
+    Cari baris kosong pertama di kolom A, mulai dari baris 2.
+    Lewati baris header (yang isinya teks seperti 'Tanggal', 'No.', dll).
+    """
+    all_values = ws.col_values(1)
+    header_keywords = ['no', 'tanggal', 'nama', 'laporan', 'toko', 'status',
+                       'total', 'statistik', 'kolom', 'catat', 'ringkasan',
+                       'tracking', 'tagihan', 'rekap']
+    
+    last_header_row = 1
+    for i, val in enumerate(all_values, start=1):
+        v = str(val).strip().lower()
+        if any(kw in v for kw in header_keywords):
+            last_header_row = i
+
+    # Data mulai setelah baris header terakhir
+    start_row = last_header_row + 1
+
+    # Cari baris kosong pertama mulai dari sana
+    for i, val in enumerate(all_values[start_row - 1:], start=start_row):
         if not str(val).strip():
             return i
-    return len(col_a) + 1
+
+    return len(all_values) + 1
 
 def rp(value):
     try:
@@ -46,7 +62,7 @@ def rp(value):
 
 def append_pemasukan(data):
     ws = get_sheet("PEMASUKAN HARIAN")
-    row = find_next_empty_row(ws, start_row=6)
+    row = find_next_empty_row(ws)
     ws.update(
         f"A{row}:G{row}",
         [[
@@ -63,11 +79,11 @@ def append_pemasukan(data):
 
 def append_pengeluaran(data):
     ws = get_sheet("PENGELUARAN")
-    row = find_next_empty_row(ws, start_row=6)
+    row = find_next_empty_row(ws)
 
     existing = ws.col_values(1)
     last_no = 0
-    for val in existing[5:]:
+    for val in existing:
         try:
             n = int(val)
             if n > last_no:
@@ -89,11 +105,11 @@ def append_pengeluaran(data):
 
 def append_kame_kitfix(data):
     ws = get_sheet("KAME → KITFIX")
-    row = find_next_empty_row(ws, start_row=6)
+    row = find_next_empty_row(ws)
 
     existing = ws.col_values(1)
     last_no = 0
-    for val in existing[5:]:
+    for val in existing:
         try:
             n = int(val)
             if n > last_no:
@@ -119,11 +135,11 @@ def append_kame_kitfix(data):
 
 def append_kitfix_kame(data):
     ws = get_sheet("KITFIX → KAME")
-    row = find_next_empty_row(ws, start_row=6)
+    row = find_next_empty_row(ws)
 
     existing = ws.col_values(1)
     last_no = 0
-    for val in existing[5:]:
+    for val in existing:
         try:
             n = int(val)
             if n > last_no:
