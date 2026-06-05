@@ -240,10 +240,12 @@ async def handle_laporan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines.append(f"📊 *Profit hari ini: {format_rp(total_pem - total_pen)}*")
 
-    if fail_msgs:
-        lines.append("\n" + "\n".join(fail_msgs))
-
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+    if fail_msgs:
+        # Kirim error sebagai pesan terpisah tanpa Markdown supaya tidak terpotong
+        error_text = "⚠️ ERROR DETAIL:\n\n" + "\n".join(fail_msgs)
+        await update.message.reply_text(error_text)
 
 # ─────────────────────────────────────────────────
 # MAIN
